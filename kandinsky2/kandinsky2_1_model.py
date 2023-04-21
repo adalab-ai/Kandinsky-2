@@ -18,6 +18,36 @@ from .model.prior import PriorDiffusionModel, CustomizedTokenizer
 from .utils import prepare_image, q_sample, process_images, prepare_mask
 
 
+def dyntresh_scale(cond, uncond, cond_scale,
+                   dynamic_thresholding_mimic_scale=4,
+                   dynamic_thresholding_percentile=0.999,):
+    diff = cond - uncond
+    dynthresh_target = uncond + diff * dynamic_thresholding_mimic_scale
+
+    dt_flattened = dynthresh_target.flatten(2)
+    dt_means = dt_flattened.mean(dim=2).unsqueeze(2)
+    dt_recentered = dt_flattened-dt_means
+    dt_abs = dt_recentered.abs()
+    dt_max = dt_abs.max(dim=2).values.unsqueeze(2)
+
+    ut = uncond + diff * cond_scale
+    ut_flattened = ut.flatten(2)
+    ut_means = ut_flattened.mean(dim=2).unsqueeze(2)
+    ut_centered = ut_flattened-ut_means
+
+    a = ut_centered.abs()
+    ut_q = torch.quantile(a, dynamic_thresholding_percentile, dim=2).unsqueeze(2)
+    s = torch.maximum(ut_q, dt_max)
+    t_clamped = ut_centered.clamp(-s, s)
+    t_normalized = t_clamped / s
+    t_renormalized = t_normalized * dt_max
+
+    uncentered = t_renormalized + ut_means
+    unflattened = uncentered.unflatten(2, dynthresh_target.shape[2:])
+    return unflattened
+
+
+
 class Kandinsky2_1:
     
     def __init__(
@@ -90,7 +120,7 @@ class Kandinsky2_1:
         self.model = create_model(**self.config["model_config"])
         self.model.load_state_dict(torch.load(model_path))
         if self.use_fp16:
-            self.model.convert_to_fp16()
+            self.model.convert_to_bf16()
             self.image_encoder = self.image_encoder.half()
 
             self.model_dtype = torch.float16
@@ -184,7 +214,7 @@ class Kandinsky2_1:
     def generate_img(
         self,
         prompt,
-        img_prompt,
+        image_emb,
         batch_size=1,
         diffusion=None,
         guidance_scale=7,
@@ -196,6 +226,7 @@ class Kandinsky2_1:
         w=512,
         sampler="ddim_sampler",
         num_steps=50,
+        text_emb=None,
     ):
         new_h, new_w = self.get_new_h_w(h, w)
         full_batch_size = batch_size * 2
@@ -205,13 +236,17 @@ class Kandinsky2_1:
             init_img = init_img.half()
         if img_mask is not None and self.use_fp16:
             img_mask = img_mask.half()
-        model_kwargs["full_emb"], model_kwargs["pooled_emb"] = self.encode_text(
-            text_encoder=self.text_encoder,
-            tokenizer=self.tokenizer1,
-            prompt=prompt,
-            batch_size=batch_size,
-        )
-        model_kwargs["image_emb"] = img_prompt
+            
+        if text_emb is None:
+            model_kwargs["full_emb"], model_kwargs["pooled_emb"] = self.encode_text(
+                text_encoder=self.text_encoder,
+                tokenizer=self.tokenizer1,
+                prompt=prompt,
+                batch_size=batch_size,
+            )
+        else:
+            model_kwargs["full_emb"], model_kwargs["pooled_emb"] = text_emb
+        model_kwargs["image_emb"] = image_emb
 
         if self.task_type == "inpainting":
             init_img = init_img.to(self.device)
@@ -225,7 +260,13 @@ class Kandinsky2_1:
             model_out = self.model(combined, ts, **kwargs)
             eps, rest = model_out[:, :4], model_out[:, 4:]
             cond_eps, uncond_eps = torch.split(eps, len(eps) // 2, dim=0)
-            half_eps = uncond_eps + guidance_scale * (cond_eps - uncond_eps)
+            
+            #half_eps = uncond_eps + guidance_scale * (cond_eps - uncond_eps)
+            
+            half_eps = dyntresh_scale(cond_eps, uncond_eps, guidance_scale,
+                   dynamic_thresholding_mimic_scale=1,
+                   dynamic_thresholding_percentile=0.9995,)
+            
             eps = torch.cat([half_eps, half_eps], dim=0)
             if sampler == "p_sampler":
                 return torch.cat([eps, rest], dim=1)
@@ -340,7 +381,7 @@ class Kandinsky2_1:
         
         return self.generate_img(
             prompt=prompt,
-            img_prompt=image_emb,
+            image_emb=image_emb,
             batch_size=batch_size,
             guidance_scale=guidance_scale,
             h=h,
@@ -460,18 +501,34 @@ class Kandinsky2_1:
             image = image.half()
         image = self.image_encoder.encode(image) * self.scale
         
-        start_step = int(diffusion.num_timesteps * (1 - strength))
-        image = q_sample(
-            image,
-            torch.tensor(diffusion.timestep_map[start_step - 1]).to(self.device),
-            schedule_name=config["diffusion_config"]["noise_schedule"],
-            num_steps=config["diffusion_config"]["steps"],
-        )
+        
+        use_noise = False
+        
+        if use_noise:
+            start_step = int(diffusion.num_timesteps * (1 - strength))
+            
+            #start_step = None
+            noise = torch.randn_like(image)
+            
+            num_steps += num_steps - start_step
+            
+            print(num_steps, start_step)
+            
+            image = strength * image + (1-strength) * noise
+        else:
+            start_step = int(diffusion.num_timesteps * (1 - strength))
+            print(diffusion.num_timesteps, start_step)
+            image = q_sample(
+                image,
+                torch.tensor(diffusion.timestep_map[start_step - 1]).to(self.device),
+                schedule_name=config["diffusion_config"]["noise_schedule"],
+                num_steps=config["diffusion_config"]["steps"],
+            )
         
         image = image.repeat(2, 1, 1, 1)
         return self.generate_img(
             prompt=prompt,
-            img_prompt=image_emb,
+            image_emb=image_emb,
             batch_size=batch_size,
             guidance_scale=guidance_scale,
             h=h,

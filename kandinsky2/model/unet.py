@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .fp16_util import convert_module_to_f16, convert_module_to_f32
+from .fp16_util import convert_module_to_f16, convert_module_to_f32, convert_module_to_bf16
 from .nn import (
     avg_pool_nd,
     conv_nd,
@@ -298,8 +298,12 @@ class QKVAttention(nn.Module):
             assert encoder_kv.shape[1] == self.n_heads * ch * 2
 
             ek, ev = encoder_kv.reshape(bs * self.n_heads, ch * 2, -1).split(ch, dim=1)
+            #print(encoder_kv.shape)
+            #print(ek.shape, ev.shape)
             k = torch.cat([ek, k], dim=-1)
             v = torch.cat([ev, v], dim=-1)
+            #print(k.shape)
+            
         if self.use_flash_attention:
             q = q.reshape(
                 q.shape[0] // self.n_heads, q.shape[1] * self.n_heads, q.shape[2]
@@ -321,6 +325,7 @@ class QKVAttention(nn.Module):
             v = v.reshape(
                 v.shape[0], v.shape[1], self.n_heads, v.shape[2] // self.n_heads
             )
+            
             k, v = k.unsqueeze(2), v.unsqueeze(2)
             kv = torch.cat([k, v], dim=2)
             dtype_a = kv.dtype
@@ -331,13 +336,32 @@ class QKVAttention(nn.Module):
             out = out.permute(0, 2, 1)
             return out
         else:
-            scale = 1 / math.sqrt(math.sqrt(ch))
-            weight = torch.einsum(
-                "bct,bcs->bts", q * scale, k * scale
-            )  # More stable with f16 than dividing afterwards
-            weight = torch.softmax(weight.float(), dim=-1).type(weight.dtype)
-            a = torch.einsum("bts,bcs->bct", weight, v)
-            return a.reshape(bs, -1, length)
+            
+            use_pytorch_attention = False #encoder_kv is None
+            
+            #print("Use pytorch: ", use_pytorch_attention)
+            #print(q.shape, k.shape, v.shape)
+            if use_pytorch_attention:                                 
+                a = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=0.0, is_causal=False) 
+                # a shape: torch.Size([24, 64, 1728])
+                #print(a.shape)
+                #torch.Size([2, 768, 1728])
+                a = a.reshape(bs, -1, length)
+                
+                # PROBLEM: q has a different shape than k and v, because k and v get extended by encoder_kv
+                
+            else:
+                scale = 1 / math.sqrt(math.sqrt(ch))
+                weight = torch.einsum(
+                    "bct,bcs->bts", q * scale, k * scale
+                )  # More stable with f16 than dividing afterwards
+                #print(weight.shape)
+                weight = torch.softmax(weight.float(), dim=-1).type(weight.dtype)
+                a = torch.einsum("bts,bcs->bct", weight, v)
+                a = a.reshape(bs, -1, length)
+            #print(a.shape)
+            #print()
+            return a
 
 
 class UNetModel(nn.Module):
@@ -570,6 +594,14 @@ class UNetModel(nn.Module):
         self.input_blocks.apply(convert_module_to_f16)
         self.middle_block.apply(convert_module_to_f16)
         self.output_blocks.apply(convert_module_to_f16)
+        
+    def convert_to_bf16(self):
+        """
+        Convert the torso of the model to float16.
+        """
+        self.input_blocks.apply(convert_module_to_bf16)
+        self.middle_block.apply(convert_module_to_bf16)
+        self.output_blocks.apply(convert_module_to_bf16)
 
     def convert_to_fp32(self):
         """
