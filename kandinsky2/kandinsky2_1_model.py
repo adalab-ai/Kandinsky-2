@@ -48,8 +48,7 @@ def dyntresh_scale(cond, uncond, cond_scale,
 
 
 
-class Kandinsky2_1:
-    
+class Kandinsky2_1(torch.nn.Module):
     def __init__(
         self, 
         config, 
@@ -58,6 +57,7 @@ class Kandinsky2_1:
         device, 
         task_type="text2img"
     ):
+        super().__init__()
         self.config = config
         self.device = device
         self.use_fp16 = self.config["model_config"]["use_fp16"]
@@ -195,6 +195,7 @@ class Kandinsky2_1:
         txt_feat_seq = x
         txt_feat = (x[torch.arange(x.shape[0]), tok.argmax(dim=-1)] @ self.clip_model.text_projection)
         txt_feat, txt_feat_seq = txt_feat.float().to(self.device), txt_feat_seq.float().to(self.device)
+        
         img_feat = self.prior(
             txt_feat,
             txt_feat_seq,
@@ -227,6 +228,8 @@ class Kandinsky2_1:
         sampler="ddim_sampler",
         num_steps=50,
         text_emb=None,
+        verbose=True,
+        return_intermediates=False,
     ):
         new_h, new_w = self.get_new_h_w(h, w)
         full_batch_size = batch_size * 2
@@ -285,16 +288,18 @@ class Kandinsky2_1:
 
         if sampler == "p_sampler":
             self.model.del_cache()
-            samples = diffusion.p_sample_loop(
+            samples, intermediates = diffusion.p_sample_loop(
                 model_fn,
                 (full_batch_size, 4, new_h, new_w),
                 device=self.device,
                 noise=noise,
-                progress=True,
                 model_kwargs=model_kwargs,
                 init_step=init_step,
                 denoised_fn=denoised_fun,
-            )[:batch_size]
+                progress=verbose,
+                return_intermediates=True,
+            )
+            samples = samples[:batch_size] 
             self.model.del_cache()
         else:
             if sampler == "ddim_sampler":
@@ -313,16 +318,20 @@ class Kandinsky2_1:
                 raise ValueError("Only ddim_sampler and plms_sampler is available")
                 
             self.model.del_cache()
-            samples, _ = sampler.sample(
+            samples, intermediates = sampler.sample(
                 num_steps,
                 batch_size * 2,
                 (4, new_h, new_w),
                 conditioning=model_kwargs,
                 x_T=noise,
                 init_step=init_step,
+                verbose=verbose,
+                return_intermediates=True,
+                log_every_t=1,
             )
             self.model.del_cache()
             samples = samples[:batch_size]
+            intermediates = intermediates[1:]  # skip initial img
             
         if self.use_image_enc:
             if self.use_fp16:
@@ -330,7 +339,10 @@ class Kandinsky2_1:
             samples = self.image_encoder.decode(samples / self.scale)
             
         samples = samples[:, :, :h, :w]
-        return process_images(samples)
+        if intermediates:
+            return process_images(samples), intermediates
+        else:
+            return process_images(samples)
 
     @torch.no_grad()
     def create_zero_img_emb(self, batch_size):
@@ -511,13 +523,11 @@ class Kandinsky2_1:
             noise = torch.randn_like(image)
             
             num_steps += num_steps - start_step
-            
-            print(num_steps, start_step)
-            
+                        
             image = strength * image + (1-strength) * noise
         else:
             start_step = int(diffusion.num_timesteps * (1 - strength))
-            print(diffusion.num_timesteps, start_step)
+            #print(diffusion.num_timesteps, start_step)
             image = q_sample(
                 image,
                 torch.tensor(diffusion.timestep_map[start_step - 1]).to(self.device),

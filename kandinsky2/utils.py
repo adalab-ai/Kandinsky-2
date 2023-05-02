@@ -47,7 +47,7 @@ def q_sample(x_start, t, schedule_name="linear", num_steps=1000, noise=None):
     sqrt_one_minus_alphas_cumprod = np.sqrt(1.0 - alphas_cumprod)
     if noise is None:
         noise = torch.randn_like(x_start)
-    assert noise.shape == x_start.shape
+    assert noise.shape == x_start.shape, f"Shapes: {noise.shape}, {x_start.shape}"
     return (
         _extract_into_tensor(sqrt_alphas_cumprod, t, x_start.shape) * x_start
         + _extract_into_tensor(sqrt_one_minus_alphas_cumprod, t, x_start.shape) * noise

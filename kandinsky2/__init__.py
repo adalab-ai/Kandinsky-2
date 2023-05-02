@@ -6,6 +6,7 @@ from omegaconf.dictconfig import DictConfig
 from .configs import CONFIG_2_0, CONFIG_2_1
 from .kandinsky2_model import Kandinsky2
 from .kandinsky2_1_model import Kandinsky2_1
+from .kandinsky_bf16 import monkey_patch_bf16
 
 
 def get_kandinsky2_0(
@@ -23,7 +24,7 @@ def get_kandinsky2_0(
         repo_id = "sberbank-ai/Kandinsky_2.0"
         model_name = "Kandinsky-2-0.pt"
     else:
-        raise ValueError("Only text2img, img2img and inpainting is available")
+        raise ValueError("Only text2img and inpainting is available")
 
     hf_hub_download(
         repo_id, model_name,

@@ -379,6 +379,7 @@ class PriorDiffusionModel(torch.nn.Module):
             denoised_fn=lambda x: torch.clamp(x, -10, 10),
             model_kwargs=cond,
         )
+        
         sample = (sample * self.clip_std) + self.clip_mean
 
         return sample[:bsz]

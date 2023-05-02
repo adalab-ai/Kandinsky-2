@@ -65,7 +65,7 @@ def extract_into_tensor(a, t, x_shape):
     return out.reshape(b, *((1,) * (len(x_shape) - 1)))
 
 
-class DDIMSampler(object):
+class DDIMSampler:
     def __init__(self, model, old_diffusion, schedule="linear", **kwargs):
         super().__init__()
         self.model = model
@@ -93,7 +93,9 @@ class DDIMSampler(object):
             num_ddpm_timesteps=self.ddpm_num_timesteps,
             verbose=verbose,
         )
+        #print("Num timesteps before init_steps: ", self.ddim_timesteps)
         self.ddim_timesteps = apply_init_step(self.ddim_timesteps, init_step)
+        #print("Num timesteps: ", self.ddim_timesteps)
         alphas_cumprod = torch.from_numpy(self.old_diffusion.alphas_cumprod)
         assert (
             alphas_cumprod.shape[0] == self.ddpm_num_timesteps
@@ -172,16 +174,18 @@ class DDIMSampler(object):
         unconditional_guidance_scale=1.0,
         unconditional_conditioning=None,
         init_step=None,
+        return_intermediates=False,
         # this has to come in the same format as the conditioning, # e.g. as encoded tokens, ...
         **kwargs,
     ):
+        schedule_dict = dict(ddim_num_steps=S, ddim_eta=eta, verbose=verbose, init_step=init_step)
         self.make_schedule(
             ddim_num_steps=S, ddim_eta=eta, verbose=verbose, init_step=init_step
         )
         # sampling
         C, H, W = shape
         size = (batch_size, C, H, W)
-
+        
         samples, intermediates = self.ddim_sampling(
             conditioning,
             size,
@@ -199,8 +203,12 @@ class DDIMSampler(object):
             log_every_t=log_every_t,
             unconditional_guidance_scale=unconditional_guidance_scale,
             unconditional_conditioning=unconditional_conditioning,
+            verbose=verbose,
         )
-        return samples, intermediates
+        if return_intermediates:
+            return samples, intermediates["x_inter"]
+        else:
+            return samples
 
     @torch.no_grad()
     def ddim_sampling(
@@ -222,6 +230,7 @@ class DDIMSampler(object):
         corrector_kwargs=None,
         unconditional_guidance_scale=1.0,
         unconditional_conditioning=None,
+        verbose=True,
     ):
         device = "cuda"
         b = shape[0]
@@ -231,11 +240,7 @@ class DDIMSampler(object):
             img = x_T
 
         if timesteps is None:
-            timesteps = (
-                self.ddpm_num_timesteps
-                if ddim_use_original_steps
-                else self.ddim_timesteps
-            )
+            timesteps = self.ddpm_num_timesteps if ddim_use_original_steps else self.ddim_timesteps
         elif timesteps is not None and not ddim_use_original_steps:
             subset_end = (
                 int(
@@ -254,7 +259,7 @@ class DDIMSampler(object):
         )
         total_steps = timesteps if ddim_use_original_steps else timesteps.shape[0]
 
-        iterator = tqdm(time_range, desc="DDIM Sampler", total=total_steps)
+        iterator = tqdm(time_range, desc="DDIM Sampler", total=total_steps, disable=not verbose)
 
         for i, step in enumerate(iterator):
             index = total_steps - i - 1
@@ -449,7 +454,7 @@ class PLMSSampler(object):
         # sampling
         C, H, W = shape
         size = (batch_size, C, H, W)
-        print(f"Data shape for PLMS sampling is {size}")
+        #print(f"Data shape for PLMS sampling is {size}")
 
         samples, intermediates = self.plms_sampling(
             conditioning,
@@ -522,7 +527,7 @@ class PLMSSampler(object):
             else np.flip(timesteps)
         )
         total_steps = timesteps if ddim_use_original_steps else timesteps.shape[0]
-        print(f"Running PLMS Sampling with {total_steps} timesteps")
+        p#rint(f"Running PLMS Sampling with {total_steps} timesteps")
 
         iterator = tqdm(time_range, desc="PLMS Sampler", total=total_steps)
         old_eps = []

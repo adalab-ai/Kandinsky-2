@@ -191,7 +191,7 @@ class GaussianDiffusion:
         """
         if noise is None:
             noise = th.randn_like(x_start)
-        assert noise.shape == x_start.shape
+        assert noise.shape == x_start.shape, f"Shapes: {noise.shape}, {x_start.shape}"
         return (
             _extract_into_tensor(self.sqrt_alphas_cumprod, t, x_start.shape) * x_start
             + _extract_into_tensor(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape)
@@ -392,6 +392,7 @@ class GaussianDiffusion:
         device=None,
         progress=False,
         init_step=None,
+        return_intermediates=False,
     ):
         """
         Generate samples from the model.
@@ -409,6 +410,7 @@ class GaussianDiffusion:
         :param progress: if True, show a tqdm progress bar.
         :return: a non-differentiable batch of samples.
         """
+        intermediates = []
         final = None
         for sample in self.p_sample_loop_progressive(
             model,
@@ -422,7 +424,12 @@ class GaussianDiffusion:
             init_step=init_step,
         ):
             final = sample
-        return final["sample"]
+            intermediates.append(sample["sample"])
+        if return_intermediates:
+            out = final["sample"], intermediates
+        else:
+            out = final["sample"]
+        return out
 
     def p_sample_loop_progressive(
         self,
