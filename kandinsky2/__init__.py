@@ -30,6 +30,7 @@ def get_kandinsky2_0(
         repo_id, model_name,
         local_dir=cache_dir,
         use_auth_token=use_auth_token,
+        local_dir_use_symlinks=False,
     )
 
     for name in [
@@ -44,6 +45,7 @@ def get_kandinsky2_0(
             repo_id, f"text_encoder1/{name}",
             local_dir=cache_dir,
             use_auth_token=use_auth_token,
+            local_dir_use_symlinks=False,
         )
 
     for name in [
@@ -57,12 +59,14 @@ def get_kandinsky2_0(
             repo_id, f"text_encoder2/{name}",
             local_dir=cache_dir,
             use_auth_token=use_auth_token,
+            local_dir_use_symlinks=False,
         )
 
     hf_hub_download(
         repo_id, "vae.ckpt",
         local_dir=cache_dir,
         use_auth_token=use_auth_token,
+        local_dir_use_symlinks=False,
     )
 
     cache_dir_text_en1 = os.path.join(cache_dir, "text_encoder1")
@@ -91,22 +95,23 @@ def get_kandinsky2_1(
     cache_dir = os.path.join(cache_dir, "2_1")
     config = DictConfig(deepcopy(CONFIG_2_1))
     config["model_config"]["use_flash_attention"] = use_flash_attention
+    repo_id = "sberbank-ai/Kandinsky_2.1"
     if task_type == "text2img":
-        repo_id = "sberbank-ai/Kandinsky_2.1"
         model_name = "decoder_fp16.ckpt"
     elif task_type == "inpainting":
-        repo_id = "sberbank-ai/Kandinsky_2.1"
         model_name = "inpainting_fp16.ckpt"
     hf_hub_download(
         repo_id, model_name,
         local_dir=cache_dir,
         use_auth_token=use_auth_token,
+        local_dir_use_symlinks=False,
     )
     prior_name = "prior_fp16.ckpt"
     hf_hub_download(
         repo_id, prior_name,
         local_dir=cache_dir,
         use_auth_token=use_auth_token,
+        local_dir_use_symlinks=False,
     )
 
     for name in [
@@ -121,18 +126,21 @@ def get_kandinsky2_1(
             repo_id, f"text_encoder/{name}",
             local_dir=cache_dir,
             use_auth_token=use_auth_token,
+            local_dir_use_symlinks=False,
         )
 
     hf_hub_download(
         repo_id, "movq_final.ckpt",
-        cache_dir=cache_dir,
+        local_dir=cache_dir,
         use_auth_token=use_auth_token,
+        local_dir_use_symlinks=False,
     )
 
     hf_hub_download(
         repo_id, "ViT-L-14_stats.th",
-        cache_dir=cache_dir,
+        local_dir=cache_dir,
         use_auth_token=use_auth_token,
+        local_dir_use_symlinks=False,
     )
 
     cache_dir_text_en = os.path.join(cache_dir, "text_encoder")
