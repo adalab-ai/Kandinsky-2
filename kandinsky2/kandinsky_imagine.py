@@ -79,11 +79,13 @@ def make_image_emb(model, prompt, batch_size, prior_cf_scale,
 
 
 class ImagineKandinsky(torch.nn.Module):
-    def __init__(self, width, height):
+    def __init__(self, width, height, cache_dir="/tmp/kandinsky", device="cuda"):
         super().__init__()
-        self.model = get_kandinsky2('cuda', task_type='text2img', 
-                                      model_version='2.1', 
-                                      use_flash_attention=use_flash_attn)
+        self.model = get_kandinsky2(device, 
+                                    task_type='text2img', 
+                                    model_version='2.1', 
+                                    use_flash_attention=use_flash_attn,
+                                    cache_dir=cache_dir)
         self.model.model.convert_to_fp16()
         self.model.model.dtype = torch.float16
         self.device = "cuda"
