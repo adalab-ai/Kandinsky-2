@@ -1,10 +1,12 @@
 from copy import deepcopy
 import time
+from typing import List
 
 import torch
 import torchvision
 import PIL
 import numpy as np
+from PIL import Image
 from kandinsky2.model.model_creation import create_gaussian_diffusion
 from kandinsky2.utils import prepare_image, q_sample
 from kandinsky2 import get_kandinsky2
@@ -30,7 +32,9 @@ def make_image_text_emb(images_texts, weights,
                 negative_prior_prompt=negative_prior_prompt)
     image_emb = None
     for img_text, weight in zip(images_texts, weights):
-        if type(img_text) == str:
+        if torch.is_tensor(img_text):
+            encoded = img_text  # was precomputed
+        elif type(img_text) == str:
             encoded = model.generate_clip_emb(
                 img_text,
                 **generate_clip_emb_kargs,
@@ -325,9 +329,24 @@ class ImagineKandinsky(torch.nn.Module):
     def init_uncond_embeddings(self, *args, **kwargs):
         pass
     
-    def _encode_prompt(self, prompt_list):        
-        images_texts = prompt_list
-        weights = np.ones(len(prompt_list))
+    def _encode_prompt(self, 
+                       prompt_list, 
+                       style_images: List = None, 
+                       style_image_weights: List = None):
+        text_weights = np.ones(len(prompt_list)) / len(prompt_list)
+        if style_images is None:
+            images_texts = prompt_list
+            weights = text_weights
+        else:
+            # read images as PIL if they are strs
+            style_images = [Image.open(style_img) if isinstance(style_img, str) else style_img
+                            for style_img in style_images]
+            images_texts = prompt_list + style_images
+            # set weights
+            if style_image_weights is None:
+                style_image_weights = np.ones(len(style_images)) / len(style_images)
+            weights = np.concatenate((text_weights, style_image_weights))
+        # set hyperparams
         batch_size = 1
         prior_cf_scale = 2
         prior_steps = "2"
@@ -427,5 +446,7 @@ class ImagineKandinsky(torch.nn.Module):
         self.model.clip_model.to("cuda")
         if torch.is_tensor(pil_img):
             pil_img = torchvision.transforms.ToPILImage()(pil_img.squeeze().cpu())
+        elif isinstance(pil_img, str):
+            pil_img = Image.open(pil_img)
         encoded = self.model.encode_images(pil_img, is_pil=True)
         return encoded
