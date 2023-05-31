@@ -100,57 +100,56 @@ def get_kandinsky2_1(
     config = DictConfig(deepcopy(CONFIG_2_1))
     config["model_config"]["use_flash_attention"] = use_flash_attention
     repo_id = "sberbank-ai/Kandinsky_2.1"
+
+    hf_hub_args = {
+        "local_dir": cache_dir,
+        "cache_dir": cache_dir,
+        "use_auth_token": use_auth_token,
+        "local_dir_use_symlinks": True,
+    }
+
     if task_type == "text2img":
         model_name = "decoder_fp16.ckpt"
     elif task_type == "inpainting":
         model_name = "inpainting_fp16.ckpt"
-    hf_hub_download(
-        repo_id, model_name,
-        local_dir=cache_dir,
-        cache_dir=cache_dir,
-        use_auth_token=use_auth_token,
-        local_dir_use_symlinks=False,
-    )
+    
     prior_name = "prior_fp16.ckpt"
-    hf_hub_download(
-        repo_id, prior_name,
-        local_dir=cache_dir,
-        cache_dir=cache_dir,
-        use_auth_token=use_auth_token,
-        local_dir_use_symlinks=False,
-    )
-
-    for name in [
+    text_enc_list = [
         "config.json",
         "pytorch_model.bin",
         "sentencepiece.bpe.model",
         "special_tokens_map.json",
         "tokenizer.json",
         "tokenizer_config.json",
-    ]:
+    ]
+    if not os.path.exists(cache_dir):
         hf_hub_download(
-            repo_id, f"text_encoder/{name}",
-            local_dir=cache_dir,
-            cache_dir=cache_dir,
-            use_auth_token=use_auth_token,
-            local_dir_use_symlinks=False,
+            repo_id, model_name,
+            **hf_hub_args
+        )
+        
+        hf_hub_download(
+            repo_id, prior_name,
+            **hf_hub_args
         )
 
-    hf_hub_download(
-        repo_id, "movq_final.ckpt",
-        local_dir=cache_dir,
-        cache_dir=cache_dir,
-        use_auth_token=use_auth_token,
-        local_dir_use_symlinks=False,
-    )
+        for name in text_enc_list:
+            hf_hub_download(
+                repo_id, f"text_encoder/{name}",
+                **hf_hub_args
+            )
 
-    hf_hub_download(
-        repo_id, "ViT-L-14_stats.th",
-        local_dir=cache_dir,
-        cache_dir=cache_dir,
-        use_auth_token=use_auth_token,
-        local_dir_use_symlinks=False,
-    )
+        hf_hub_download(
+            repo_id, "movq_final.ckpt",
+            **hf_hub_args
+        )
+
+        hf_hub_download(
+            repo_id, "ViT-L-14_stats.th",
+            **hf_hub_args
+        )
+    else:
+        print(f"Cache dir [{cache_dir}] already exists, skipping download")
 
     cache_dir_text_en = os.path.join(cache_dir, "text_encoder")
 
