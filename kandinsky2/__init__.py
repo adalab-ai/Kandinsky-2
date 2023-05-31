@@ -29,6 +29,7 @@ def get_kandinsky2_0(
     hf_hub_download(
         repo_id, model_name,
         local_dir=cache_dir,
+        cache_dir=cache_dir,
         use_auth_token=use_auth_token,
         local_dir_use_symlinks=False,
     )
@@ -44,6 +45,7 @@ def get_kandinsky2_0(
         hf_hub_download(
             repo_id, f"text_encoder1/{name}",
             local_dir=cache_dir,
+            cache_dir=cache_dir,
             use_auth_token=use_auth_token,
             local_dir_use_symlinks=False,
         )
@@ -58,6 +60,7 @@ def get_kandinsky2_0(
         hf_hub_download(
             repo_id, f"text_encoder2/{name}",
             local_dir=cache_dir,
+            cache_dir=cache_dir,
             use_auth_token=use_auth_token,
             local_dir_use_symlinks=False,
         )
@@ -65,6 +68,7 @@ def get_kandinsky2_0(
     hf_hub_download(
         repo_id, "vae.ckpt",
         local_dir=cache_dir,
+        cache_dir=cache_dir,
         use_auth_token=use_auth_token,
         local_dir_use_symlinks=False,
     )
@@ -99,6 +103,7 @@ def get_kandinsky2_1(
 
     hf_hub_args = {
         "local_dir": cache_dir,
+        "cache_dir": cache_dir,
         "use_auth_token": use_auth_token,
         "local_dir_use_symlinks": True,
     }
