@@ -375,6 +375,8 @@ class ImagineKandinsky(torch.nn.Module):
                 sampler="ddim_sampler",  # p_sampler or ddim_sampler
                 latents=None,
                 t_start=None,
+                width=768,
+                height=576,
                 #sampler="p_sampler",
                 **diffusion_kwargs):
         
@@ -414,7 +416,9 @@ class ImagineKandinsky(torch.nn.Module):
                 prior_steps="2",
                 negative_prior_prompt="",
                 negative_decoder_prompt="",
-            
+                
+                h=height,
+                w=width,
                 seed=1,
                 init_step=t_start,
                 inpaint_img=None,
